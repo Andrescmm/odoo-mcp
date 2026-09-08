@@ -1,0 +1,75 @@
+# /etc/nginx/sites-available/mcp.fizz.software
+#
+# Equivalente al Caddyfile de ejemplo, para servidores que ya corren nginx.
+# El certificado NO se emite solo: usar certbot (ver deploy/README.md).
+#
+# Detalle que importa: el transporte streamable-http del MCP mantiene la
+# respuesta abierta y va emitiendo eventos. Con el buffering por defecto nginx
+# acumula la respuesta y el cliente parece colgado, así que `proxy_buffering off`
+# no es opcional acá (es el equivalente de `flush_interval -1` en Caddy).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name mcp.fizz.software;
+
+    # certbot deja acá su desafío; el resto va a HTTPS.
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    # `http2 on;` existe desde nginx 1.25.1 (Ubuntu 24.04). En 22.04 viene 1.18:
+    # ahí hay que borrar esta línea y poner `listen 443 ssl http2;` arriba.
+    http2 on;
+    server_name mcp.fizz.software;
+
+    ssl_certificate     /etc/letsencrypt/live/mcp.fizz.software/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mcp.fizz.software/privkey.pem;
+    # Escrito a mano en vez de `include options-ssl-nginx.conf`: ese archivo lo
+    # deja el plugin python3-certbot-nginx, que acá no se instala.
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:MCP:10m;
+    ssl_session_timeout 1d;
+
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # El cuerpo de una llamada MCP es JSON chico; un límite bajo corta abusos.
+    client_max_body_size 1m;
+
+    # Sonda de salud: no pide token, así que la dejamos sólo para monitoreo local.
+    location = /healthz {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Streaming: sin buffers intermedios y sin que nginx corte la conexión
+        # mientras el servidor todavía tiene la respuesta abierta.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}

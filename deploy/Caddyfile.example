@@ -1,0 +1,24 @@
+# Replace mcp.example.com before installing this as /etc/caddy/Caddyfile.
+# Caddy obtains and renews the TLS certificate automatically when DNS and ports are correct.
+mcp.example.com {
+    encode zstd gzip
+
+    # Expose only the MCP endpoint. /healthz remains local to the Linux host.
+    @mcp path /mcp /mcp/
+    handle @mcp {
+        reverse_proxy 127.0.0.1:8000 {
+            flush_interval -1
+        }
+    }
+
+    handle {
+        respond "Not found" 404
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+}

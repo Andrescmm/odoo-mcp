@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "odoo-project-mcp"
+version = "0.2.0"
+description = "Restricted MCP server for Odoo 17 Community Project tasks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "httpx>=0.27,<1",
+    "mcp>=1.28,<2",
+    "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.8,<1",
+]
+
+[project.scripts]
+odoo-project-mcp = "odoo_project_mcp.server:main"
+odoo-project-mcp-users = "odoo_project_mcp.users:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odoo_project_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

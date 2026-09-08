@@ -1,0 +1,32 @@
+[Unit]
+Description=Odoo Project MCP team server
+Documentation=https://modelcontextprotocol.io/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=odoo-mcp
+Group=odoo-mcp
+WorkingDirectory=/opt/odoo-project-mcp/server
+EnvironmentFile=/etc/odoo-project-mcp/server.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/odoo-project-mcp/server/.venv/bin/odoo-project-mcp
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0077
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target
