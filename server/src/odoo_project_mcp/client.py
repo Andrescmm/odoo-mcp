@@ -28,7 +28,7 @@ class OdooProjectClient:
             base_url=settings.base_url,
             headers={
                 "Accept": "application/json",
-                "User-Agent": "odoo-project-mcp/0.2.0",
+                "User-Agent": "odoo-project-mcp/0.3.0",
             },
             timeout=settings.timeout_seconds,
             verify=settings.verify_tls,
@@ -152,19 +152,87 @@ class OdooProjectClient:
             params["task_state"] = task_state
         return self._request("GET", f"/mcp/v1/projects/{project_id}/tasks", params=params)
 
-    def get_task(self, task_id: int) -> dict[str, Any]:
-        return self._request("GET", f"/mcp/v1/tasks/{task_id}")
+    def search_tasks(
+        self,
+        *,
+        name: str | None = None,
+        project_id: int | None = None,
+        stage_id: int | None = None,
+        assignee_id: int | None = None,
+        parent_id: int | None = None,
+        ai_status: str | None = None,
+        task_state: str | None = None,
+        active: str = "true",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"active": active, "limit": limit, "offset": offset}
+        for key, value in (
+            ("name", name),
+            ("project_id", project_id),
+            ("stage_id", stage_id),
+            ("assignee_id", assignee_id),
+            ("parent_id", parent_id),
+            ("ai_status", ai_status),
+            ("task_state", task_state),
+        ):
+            if value is not None:
+                params[key] = value
+        return self._request("GET", "/mcp/v1/tasks", params=params)
+
+    def get_task(self, task_id: int, *, include_archived: bool = False) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/mcp/v1/tasks/{task_id}",
+            params={"include_archived": str(include_archived).lower()},
+        )
+
+    def list_project_stages(self, project_id: int) -> dict[str, Any]:
+        return self._request("GET", f"/mcp/v1/projects/{project_id}/stages")
+
+    def list_project_members(self, project_id: int) -> dict[str, Any]:
+        return self._request("GET", f"/mcp/v1/projects/{project_id}/members")
+
+    def list_task_comments(
+        self, task_id: int, *, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/mcp/v1/tasks/{task_id}/comments",
+            params={"limit": limit, "offset": offset},
+        )
+
+    def create_task(self, **values: Any) -> dict[str, Any]:
+        return self._request("POST", "/mcp/v1/tasks", json=values)
+
+    def update_task(self, task_id: int, **values: Any) -> dict[str, Any]:
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/update", json=values)
 
     def start_task(
-        self, task_id: int, *, agent: str, git_branch: str | None = None
+        self,
+        task_id: int,
+        *,
+        agent: str,
+        git_branch: str | None = None,
+        git_repository: str | None = None,
+        expected_write_date: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"agent": agent}
         if git_branch:
             body["git_branch"] = git_branch
+        if git_repository:
+            body["git_repository"] = git_repository
+        if expected_write_date:
+            body["expected_write_date"] = expected_write_date
         return self._request("POST", f"/mcp/v1/tasks/{task_id}/start", json=body)
 
-    def add_comment(self, task_id: int, *, comment: str) -> dict[str, Any]:
-        return self._request("POST", f"/mcp/v1/tasks/{task_id}/comments", json={"comment": comment})
+    def add_comment(
+        self, task_id: int, *, comment: str, expected_write_date: str | None = None
+    ) -> dict[str, Any]:
+        body = {"comment": comment}
+        if expected_write_date:
+            body["expected_write_date"] = expected_write_date
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/comments", json=body)
 
     def complete_task(
         self,
@@ -174,13 +242,25 @@ class OdooProjectClient:
         agent: str,
         git_branch: str | None = None,
         git_commit: str | None = None,
+        test_results: str | None = None,
+        pull_request_url: str | None = None,
+        deployment_environment: str | None = None,
         mark_done: bool = True,
+        expected_write_date: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"summary": summary, "agent": agent, "mark_done": mark_done}
         if git_branch:
             body["git_branch"] = git_branch
         if git_commit:
             body["git_commit"] = git_commit
+        if test_results:
+            body["test_results"] = test_results
+        if pull_request_url:
+            body["pull_request_url"] = pull_request_url
+        if deployment_environment:
+            body["deployment_environment"] = deployment_environment
+        if expected_write_date:
+            body["expected_write_date"] = expected_write_date
         return self._request("POST", f"/mcp/v1/tasks/{task_id}/complete", json=body)
 
     def verify_task(
@@ -190,7 +270,9 @@ class OdooProjectClient:
         result: str,
         notes: str,
         agent: str,
+        evidence: str | None = None,
         update_task_state: bool = True,
+        expected_write_date: str | None = None,
     ) -> dict[str, Any]:
         body = {
             "result": result,
@@ -198,4 +280,95 @@ class OdooProjectClient:
             "agent": agent,
             "update_task_state": update_task_state,
         }
+        if evidence:
+            body["evidence"] = evidence
+        if expected_write_date:
+            body["expected_write_date"] = expected_write_date
         return self._request("POST", f"/mcp/v1/tasks/{task_id}/verify", json=body)
+
+    def set_task_stage(
+        self,
+        task_id: int,
+        *,
+        stage_id: int | None = None,
+        stage_name: str | None = None,
+        note: str | None = None,
+        expected_write_date: str | None = None,
+    ) -> dict[str, Any]:
+        body = self._optional_body(
+            stage_id=stage_id,
+            stage_name=stage_name,
+            note=note,
+            expected_write_date=expected_write_date,
+        )
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/stage", json=body)
+
+    def set_task_state(
+        self,
+        task_id: int,
+        *,
+        state: str,
+        note: str | None = None,
+        expected_write_date: str | None = None,
+    ) -> dict[str, Any]:
+        body = self._optional_body(
+            state=state, note=note, expected_write_date=expected_write_date
+        )
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/state", json=body)
+
+    def set_task_assignees(
+        self,
+        task_id: int,
+        *,
+        mode: str,
+        assignee_ids: list[int] | None = None,
+        assignee_logins: list[str] | None = None,
+        note: str | None = None,
+        expected_write_date: str | None = None,
+    ) -> dict[str, Any]:
+        body = self._optional_body(
+            mode=mode,
+            assignee_ids=assignee_ids,
+            assignee_logins=assignee_logins,
+            note=note,
+            expected_write_date=expected_write_date,
+        )
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/assignees", json=body)
+
+    def set_task_dependencies(
+        self,
+        task_id: int,
+        *,
+        mode: str,
+        dependency_ids: list[int],
+        note: str | None = None,
+        expected_write_date: str | None = None,
+    ) -> dict[str, Any]:
+        body = self._optional_body(
+            mode=mode,
+            dependency_ids=dependency_ids,
+            note=note,
+            expected_write_date=expected_write_date,
+        )
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/dependencies", json=body)
+
+    def log_work(
+        self,
+        task_id: int,
+        *,
+        description: str,
+        hours: float,
+        date: str | None = None,
+        expected_write_date: str | None = None,
+    ) -> dict[str, Any]:
+        body = self._optional_body(
+            description=description,
+            hours=hours,
+            date=date,
+            expected_write_date=expected_write_date,
+        )
+        return self._request("POST", f"/mcp/v1/tasks/{task_id}/worklogs", json=body)
+
+    @staticmethod
+    def _optional_body(**values: Any) -> dict[str, Any]:
+        return {key: value for key, value in values.items() if value is not None}

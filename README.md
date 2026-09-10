@@ -1,6 +1,6 @@
 # Odoo 17 Community ↔ Claude Code mediante MCP
 
-MVP funcional para que Claude Code lea y actualice tareas de **Project** en Odoo 17 Community. La integración expone solo siete operaciones de negocio; no contiene una herramienta genérica de ORM, JSON-RPC, XML-RPC ni `execute_kw`.
+Integración restringida para que Claude Code lea y gestione tareas de **Project** en Odoo 17 Community. Expone operaciones de negocio concretas; no contiene una herramienta genérica de ORM, JSON-RPC, XML-RPC ni `execute_kw`.
 
 ## Arquitectura
 
@@ -17,11 +17,12 @@ API /mcp/v1/* del módulo project_mcp
 project.project / project.task / mail.thread
 ```
 
+Este repositorio contiene el servidor MCP. El módulo `project_mcp` se mantiene en tu repositorio separado de addons Odoo.
+
 Contenido:
 
-- `odoo_addons/project_mcp`: módulo instalable de Odoo 17.
-- `server`: servidor MCP Python con las tools `list_projects`, `list_tasks`, `get_task`, `start_task`, `add_comment`, `complete_task` y `verify_task`.
-- `.mcp.json.example`: configuración de proyecto para Claude Code.
+- `server`: servidor MCP Python con las herramientas de lectura, planificación, ejecución y verificación descritas abajo.
+- `.mcp.json.example`: configuración local de proyecto para Claude Code.
 - `.env.example`: inventario de variables, sin secretos reales.
 - `deploy`: despliegue Linux permanente con systemd, HTTPS y tokens personales.
 
@@ -34,11 +35,24 @@ Contenido:
 
 Para un equipo, usa la guía completa [deploy/README.md](deploy/README.md). Incluye un token distinto para cada colaborador, roles, expiración, revocación, rate limiting, Caddy y systemd. El puerto interno queda ligado a `127.0.0.1`; solo se publica HTTPS.
 
+## Herramientas disponibles
+
+| Grupo | Tools MCP |
+|---|---|
+| Consulta | `list_projects`, `list_tasks`, `search_tasks`, `get_task` |
+| Contexto | `list_project_stages`, `list_project_members`, `list_task_comments` |
+| Planificación | `create_task`, `create_subtask`, `update_task`, `set_task_assignees`, `set_task_stage`, `set_task_dependencies` |
+| Ejecución | `start_task`, `add_comment`, `complete_task`, `reopen_task`, `cancel_task` |
+| Calidad | `verify_task` |
+| Tiempo | `log_work` (requiere que Timesheets esté instalado y habilitado en el proyecto) |
+
+Los campos adicionales de la pestaña **AI / MCP** guardan criterios de aceptación, resultados de pruebas, repositorio, pull request, ambiente de despliegue, evidencia de verificación y bloqueos. Las mutaciones aceptan opcionalmente `expected_write_date`: si la tarea cambió desde la última lectura, Odoo responde `409 stale_task` para evitar sobrescribir trabajo de otra persona.
+
 ## 1. Instalar el módulo en Odoo
 
 Requisitos: Odoo 17 Community, Python de Odoo y los módulos estándar `project` y `mail`.
 
-1. Copia `odoo_addons/project_mcp` a una ruta incluida en `addons_path`.
+1. Desde tu repositorio de addons, copia `project_mcp` a una ruta incluida en `addons_path`.
 2. Reinicia Odoo y actualiza la lista de aplicaciones.
 3. Instala **Project MCP** desde Apps, o desde el servidor:
 
@@ -52,7 +66,7 @@ Para actualizar el módulo después de cambios:
 ./odoo-bin -c /etc/odoo.conf -d NOMBRE_DB -u project_mcp --stop-after-init
 ```
 
-En Docker, monta la carpeta `odoo_addons` como un volumen de addons personalizados y agrega esa ruta a `addons_path`.
+En Docker, monta el directorio de tu repositorio de addons como volumen y agrega esa ruta a `addons_path`.
 
 ## 2. Crear el usuario técnico y una clave limitada
 
@@ -61,6 +75,8 @@ En Docker, monta la carpeta `odoo_addons` como un volumen de addons personalizad
 3. Restringe al usuario con la visibilidad, membresía, compañías y reglas de registro normales de Odoo. La API no usa `sudo()` para proyectos o tareas.
 4. Inicia sesión como ese usuario. Ve a **My Profile → Account Security → API Keys** y pulsa **New Project MCP Key**.
 5. Guarda la clave una sola vez en un gestor de secretos.
+
+Si usarás `log_work`, instala **Timesheets**, habilita horas en el proyecto y otorga al usuario técnico el nivel mínimo de Timesheets necesario para crear sus propias líneas. Las demás 19 tools no requieren ese módulo.
 
 La clave generada por el botón del módulo tiene scope `project_mcp`: autentica estos endpoints, pero no sirve como contraseña de RPC general. El controlador también acepta claves Odoo sin scope por compatibilidad, aunque se recomienda la clave específica.
 
@@ -212,6 +228,39 @@ curl --fail-with-body --silent --show-error \
   "$ODOO_URL/mcp/v1/tasks/58/verify?db=$ODOO_DB"
 ```
 
+Crear una subtarea (el mismo endpoint de creación usa `parent_id`):
+
+```bash
+curl --fail-with-body --silent --show-error \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ODOO_KEY" \
+  -H "X-Odoo-Login: $ODOO_LOGIN" \
+  -d '{"project_id":8,"parent_id":58,"name":"Agregar pruebas","acceptance_criteria":"Cubre el caso reportado"}' \
+  "$ODOO_URL/mcp/v1/tasks?db=$ODOO_DB"
+```
+
+Actualizar metadatos sin pisar cambios más recientes:
+
+```bash
+curl --fail-with-body --silent --show-error \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ODOO_KEY" \
+  -H "X-Odoo-Login: $ODOO_LOGIN" \
+  -d '{"pull_request_url":"https://github.com/example/repo/pull/7","test_results":"12 pruebas aprobadas","expected_write_date":"2026-09-10 10:30:00"}' \
+  "$ODOO_URL/mcp/v1/tasks/58/update?db=$ODOO_DB"
+```
+
+Configurar dependencias:
+
+```bash
+curl --fail-with-body --silent --show-error \
+  -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ODOO_KEY" \
+  -H "X-Odoo-Login: $ODOO_LOGIN" \
+  -d '{"mode":"set","dependency_ids":[51,52],"note":"Ambas deben finalizar primero"}' \
+  "$ODOO_URL/mcp/v1/tasks/58/dependencies?db=$ODOO_DB"
+```
+
 Todas las respuestas usan esta envoltura:
 
 ```json
@@ -275,7 +324,7 @@ Usa una base desechable para pruebas de Odoo.
 - Conserva `proxy_mode` y `dbfilter` correctos en Odoo. En multidatabase, evita que el cliente elija bases que no correspondan al hostname.
 - Revisa permisos reales con el usuario técnico: el endpoint aplica ACLs y record rules de Odoo, pero esos permisos siguen siendo responsabilidad del administrador.
 - El único `sudo()` del flujo de datos se usa para verificar la clave y escribir auditoría controlada. Las lecturas y cambios de proyectos/tareas se ejecutan como el usuario autenticado.
-- La API no crea ni elimina proyectos/tareas, no acepta nombres de modelos o métodos, y no reenvía dominios arbitrarios del cliente.
+- La API puede crear tareas y subtareas, pero no crea proyectos ni elimina registros. No acepta nombres de modelos o métodos y no reenvía dominios arbitrarios del cliente.
 
 ## Compatibilidad
 

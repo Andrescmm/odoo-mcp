@@ -108,3 +108,92 @@ def test_redirect_is_not_followed():
         client.get_task(1)
     assert error.value.code == "unexpected_redirect"
     client.close()
+
+
+def test_create_subtask_contract_and_metadata():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/mcp/v1/tasks"
+        assert json.loads(request.content) == {
+            "project_id": 8,
+            "parent_id": 42,
+            "name": "Add regression tests",
+            "acceptance_criteria": "Covers the reported bug",
+            "agent": "claude-code:developer@example.test",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "request_id": request.headers["x-request-id"],
+                "data": {"id": 43, "parent_id": 42},
+            },
+        )
+
+    client = OdooProjectClient(settings(), transport=httpx.MockTransport(handler))
+    result = client.create_task(
+        project_id=8,
+        parent_id=42,
+        name="Add regression tests",
+        acceptance_criteria="Covers the reported bug",
+        agent="claude-code:developer@example.test",
+    )
+    assert result == {"id": 43, "parent_id": 42}
+    client.close()
+
+
+def test_update_task_sends_expected_write_date():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/mcp/v1/tasks/42/update"
+        assert json.loads(request.content) == {
+            "pull_request_url": "https://github.com/example/repo/pull/7",
+            "test_results": "12 tests passed",
+            "expected_write_date": "2026-09-10 10:30:00",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "request_id": request.headers["x-request-id"],
+                "data": {"id": 42},
+            },
+        )
+
+    client = OdooProjectClient(settings(), transport=httpx.MockTransport(handler))
+    result = client.update_task(
+        42,
+        pull_request_url="https://github.com/example/repo/pull/7",
+        test_results="12 tests passed",
+        expected_write_date="2026-09-10 10:30:00",
+    )
+    assert result["id"] == 42
+    client.close()
+
+
+def test_dependencies_and_worklog_contracts():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "request_id": request.headers["x-request-id"],
+                "data": {"task_id": 42},
+            },
+        )
+
+    client = OdooProjectClient(settings(), transport=httpx.MockTransport(handler))
+    client.set_task_dependencies(42, mode="set", dependency_ids=[10, 11])
+    client.log_work(42, description="Implemented endpoint", hours=1.5, date="2026-09-10")
+    assert seen == [
+        (
+            "/mcp/v1/tasks/42/dependencies",
+            {"mode": "set", "dependency_ids": [10, 11]},
+        ),
+        (
+            "/mcp/v1/tasks/42/worklogs",
+            {"description": "Implemented endpoint", "hours": 1.5, "date": "2026-09-10"},
+        ),
+    ]
+    client.close()

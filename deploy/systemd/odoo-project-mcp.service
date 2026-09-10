@@ -8,10 +8,10 @@ After=network-online.target
 Type=simple
 User=odoo-mcp
 Group=odoo-mcp
-WorkingDirectory=/opt/odoo-project-mcp/server
-EnvironmentFile=/etc/odoo-project-mcp/server.env
+WorkingDirectory=/opt/odoo-mcp/server
+EnvironmentFile=/etc/odoo-mcp/server.env
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/odoo-project-mcp/server/.venv/bin/odoo-project-mcp
+ExecStart=/opt/odoo-mcp/server/.venv/bin/odoo-project-mcp
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20

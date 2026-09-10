@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "odoo-project-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Restricted MCP server for Odoo 17 Community Project tasks"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -81,10 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--file",
         type=Path,
-        default=Path(os.getenv("MCP_USERS_FILE", "/etc/odoo-project-mcp/users.json")),
+        default=Path(os.getenv("MCP_USERS_FILE", "/var/lib/odoo-mcp/users.json")),
         help=(
             "Token registry JSON path "
-            "(default: MCP_USERS_FILE or /etc/odoo-project-mcp/users.json)."
+            "(default: MCP_USERS_FILE or /var/lib/odoo-mcp/users.json)."
         ),
     )
     commands = parser.add_subparsers(dest="command", required=True)

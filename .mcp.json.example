@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "odoo-project": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "${CLAUDE_PROJECT_DIR:-.}/server",
+        "run",
+        "odoo-project-mcp"
+      ],
+      "env": {
+        "ODOO_BASE_URL": "${ODOO_BASE_URL}",
+        "ODOO_DATABASE": "${ODOO_DATABASE}",
+        "ODOO_LOGIN": "${ODOO_LOGIN}",
+        "ODOO_API_KEY": "${ODOO_API_KEY}",
+        "ODOO_MCP_AGENT": "${ODOO_MCP_AGENT:-claude-code}",
+        "ODOO_TIMEOUT_SECONDS": "${ODOO_TIMEOUT_SECONDS:-20}",
+        "ODOO_VERIFY_TLS": "${ODOO_VERIFY_TLS:-true}"
+      }
+    }
+  }
+}
